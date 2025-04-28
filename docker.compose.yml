@@ -1,0 +1,216 @@
+services:
+
+  alpine_desktop:
+    build:
+      context: ./alpine_desktop
+      args:
+        DESKTOP_USERNAME: ${DESKTOP_USERNAME}
+        DESKTOP_PASSWORD: ${DESKTOP_PASSWORD}
+        CONTAINER_NAME: "alpine_desktop"  
+    container_name: alpine_1
+    privileged: true
+    expose:
+      - "3389"
+    volumes:
+      - weblink_volume:/mount
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: always
+    environment:
+      RESET_DESKTOP: ${RESET_DESKTOP}
+    networks:
+      - net
+
+  chromium_1:
+    build:
+      context: ./chromium_kiosk
+      args:
+        KIOSK_USERNAME: ${KIOSK_USERNAME}
+        KIOSK_PASSWORD: ${KIOSK_PASSWORD}
+        CONTAINER_NAME: "chromium_1"
+    container_name: chromium_1
+    privileged: true
+    expose:
+      - "3389"
+    volumes:
+      - weblink_volume:/mount
+    restart: always
+    environment:
+      RESET_KIOSK: ${RESET_KIOSK}
+    networks:
+      - net
+
+  chromium_2:
+    build:
+      context: ./chromium_kiosk
+      args:
+        KIOSK_USERNAME: ${KIOSK_USERNAME}
+        KIOSK_PASSWORD: ${KIOSK_PASSWORD}
+        CONTAINER_NAME: "chromium_2"
+    container_name: chromium_2
+    privileged: true
+    expose:
+      - "3389"
+    volumes:
+      - weblink_volume:/mount
+    restart: always
+    environment:
+      RESET_KIOSK: ${RESET_KIOSK}
+    networks:
+      - net
+
+  zotero_1:
+    build:
+      context: ./zotero_kiosk
+      args:
+        KIOSK_USERNAME: ${KIOSK_USERNAME}
+        KIOSK_PASSWORD: ${KIOSK_PASSWORD}
+        CONTAINER_NAME: "zotero_1"
+    container_name: zotero_1
+    privileged: true
+    expose:
+      - "3389"
+    volumes:
+      - weblink_volume:/mount
+    restart: always
+    environment:
+      RESET_ZOTERO: ${RESET_ZOTERO}
+    networks:
+      - net
+
+  postgres:
+    build:
+      context: ./postgres
+    container_name: postgres
+    env_file:
+    - .env
+    volumes:
+      - weblink_volume:/mount
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    expose:
+      - "5432"
+    restart: always
+    networks:
+      - net
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARED_TOKEN}
+    restart: always
+    networks:
+      - net
+
+  dashboard:
+    build:
+      context: ./dashboard
+    container_name: dashboard
+    expose:
+      - "8080"
+    volumes:
+      - weblink_volume:/mount
+    env_file:
+      - .env
+    restart: always
+    networks:
+      - net
+
+  filebrowser:
+    build: ./filebrowser
+    container_name: filebrowser
+    env_file:
+      - .env
+    expose:
+      - "8080"
+    volumes:
+      - weblink_volume:/mount
+    restart: always
+    networks:
+      - net
+  
+  portainer:
+    build: ./portainer
+    container_name: portainer
+    privileged: true
+    expose:
+      - "9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - weblink_volume:/mount
+    restart: always
+    networks:
+      - net
+    
+
+  mlflow:
+    build: ./mlflow
+    container_name: mlflow
+    env_file:
+      - .env
+    volumes:
+      - weblink_volume:/mount
+    expose:
+      - "5000"
+    restart: always
+    networks:
+      - net
+
+  hedgedoc:
+    build: ./hedgedoc
+    container_name: hedgedoc
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - weblink_volume:/mount
+    expose:
+      - "3000"
+    restart: always
+    networks:
+      - net
+   
+  guacd:
+    image: guacamole/guacd
+    container_name: guacd
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "4822"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+    networks:
+      - net
+
+  guacamole:
+    image: guacamole/guacamole
+    container_name: guacamole
+    depends_on:
+      guacd:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      GUACD_HOSTNAME: guacd
+      POSTGRES_HOSTNAME: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DATABASE: ${GUACAMOLE_DATABASE}
+      POSTGRES_USER: ${GUACAMOLE_USER}
+      POSTGRES_PASSWORD: ${GUACAMOLE_PASSWORD}
+    expose:
+      - "8080"
+    restart: always
+    networks:
+      - net
+
+volumes:
+  weblink_volume:
+    name: weblink_volume
+
+networks:
+  net:
+    driver: bridge
